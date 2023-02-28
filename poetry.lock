@@ -195,25 +195,27 @@ protobuf = ["grpcio-tools (>=1.52.0)"]
 
 [[package]]
 name = "gym"
-version = "0.19.0"
-description = "The OpenAI Gym: A toolkit for developing and comparing your reinforcement learning agents."
+version = "0.21.0"
+description = "Gym: A universal API for reinforcement learning environments."
 category = "main"
 optional = false
 python-versions = ">=3.6"
 
 [package.dependencies]
-cloudpickle = ">=1.2.0,<1.7.0"
+cloudpickle = ">=1.2.0"
 numpy = ">=1.18.0"
 
 [package.extras]
-all = ["atari-py (==0.2.6)", "box2d-py (>=2.3.5,<2.4.0)", "opencv-python (>=3)", "mujoco_py (>=1.50,<2.0)", "scipy", "imageio", "pyglet (>=1.4.0)"]
-atari = ["atari-py (==0.2.6)", "opencv-python (>=3)"]
-box2d = ["box2d-py (>=2.3.5,<2.4.0)", "pyglet (>=1.4.0)"]
+accept-rom-license = ["autorom[accept-rom-license] (>=0.4.2,<0.5.0)"]
+all = ["mujoco_py (>=1.50,<2.0)", "lz4 (>=3.1.0)", "opencv-python (>=3)", "ale-py (>=0.7.1,<0.8.0)", "pyglet (>=1.4.0)", "scipy (>=1.4.1)", "box2d-py (==2.3.5)", "pyglet (>=1.4.0)", "ale-py (>=0.7.1,<0.8.0)", "lz4 (>=3.1.0)", "opencv-python (>=3)", "pyglet (>=1.4.0)", "box2d-py (==2.3.5)", "pyglet (>=1.4.0)", "scipy (>=1.4.1)", "mujoco_py (>=1.50,<2.0)"]
+atari = ["ale-py (>=0.7.1,<0.8.0)"]
+box2d = ["box2d-py (==2.3.5)", "pyglet (>=1.4.0)"]
 classic_control = ["pyglet (>=1.4.0)"]
-mujoco = ["mujoco_py (>=1.50,<2.0)", "imageio"]
-nomujoco = ["atari-py (==0.2.6)", "box2d-py (>=2.3.5,<2.4.0)", "opencv-python (>=3)", "scipy", "pyglet (>=1.4.0)"]
-robotics = ["mujoco_py (>=1.50,<2.0)", "imageio"]
-toy_text = ["scipy"]
+mujoco = ["mujoco_py (>=1.50,<2.0)"]
+nomujoco = ["lz4 (>=3.1.0)", "opencv-python (>=3)", "ale-py (>=0.7.1,<0.8.0)", "pyglet (>=1.4.0)", "scipy (>=1.4.1)", "box2d-py (==2.3.5)", "pyglet (>=1.4.0)"]
+other = ["lz4 (>=3.1.0)", "opencv-python (>=3)"]
+robotics = ["mujoco_py (>=1.50,<2.0)"]
+toy_text = ["scipy (>=1.4.1)"]
 
 [[package]]
 name = "idna"
@@ -222,6 +224,34 @@ description = "Internationalized Domain Names in Applications (IDNA)"
 category = "main"
 optional = false
 python-versions = ">=3.5"
+
+[[package]]
+name = "imageio"
+version = "2.26.0"
+description = "Library for reading and writing a wide range of image, video, scientific, and volumetric data formats."
+category = "main"
+optional = false
+python-versions = ">=3.7"
+
+[package.dependencies]
+numpy = "*"
+pillow = ">=8.3.2"
+
+[package.extras]
+all-plugins = ["astropy", "av", "imageio-ffmpeg", "psutil", "tifffile"]
+all-plugins-pypy = ["av", "imageio-ffmpeg", "psutil", "tifffile"]
+build = ["wheel"]
+dev = ["invoke", "pytest", "pytest-cov", "fsspec", "black", "flake8"]
+docs = ["sphinx (<6)", "numpydoc", "pydata-sphinx-theme"]
+ffmpeg = ["imageio-ffmpeg", "psutil"]
+fits = ["astropy"]
+full = ["astropy", "av", "black", "flake8", "fsspec", "gdal", "imageio-ffmpeg", "invoke", "itk", "numpydoc", "psutil", "pydata-sphinx-theme", "pytest", "pytest-cov", "sphinx (<6)", "tifffile", "wheel"]
+gdal = ["gdal"]
+itk = ["itk"]
+linting = ["black", "flake8"]
+pyav = ["av"]
+test = ["invoke", "pytest", "pytest-cov", "fsspec"]
+tifffile = ["tifffile"]
 
 [[package]]
 name = "kiwisolver"
@@ -409,6 +439,14 @@ python-versions = "*"
 pyasn1 = ">=0.4.6,<0.5.0"
 
 [[package]]
+name = "pyglet"
+version = "1.5.27"
+description = "Cross-platform windowing and multimedia library"
+category = "main"
+optional = false
+python-versions = "*"
+
+[[package]]
 name = "pyparsing"
 version = "3.0.9"
 description = "pyparsing module - Classes and methods to define and execute parsing grammars"
@@ -573,15 +611,15 @@ python-versions = ">=3.6"
 
 [[package]]
 name = "stable-baselines3"
-version = "1.4.0"
+version = "1.2.0"
 description = "Pytorch version of Stable Baselines, implementations of reinforcement learning algorithms."
 category = "main"
 optional = false
-python-versions = ">=3.7"
+python-versions = "*"
 
 [package.dependencies]
 cloudpickle = "*"
-gym = ">=0.17,<0.20"
+gym = ">=0.17"
 matplotlib = "*"
 numpy = "*"
 pandas = "*"
@@ -589,8 +627,16 @@ torch = ">=1.8.1"
 
 [package.extras]
 docs = ["sphinx", "sphinx-autobuild", "sphinx-rtd-theme", "sphinxcontrib.spelling", "sphinx-autodoc-typehints"]
-extra = ["opencv-python", "atari-py (==0.2.6)", "pillow", "tensorboard (>=2.2.0)", "psutil"]
+extra = ["opencv-python", "atari-py (>=0.2.0,<0.3.0)", "pillow", "tensorboard (>=2.2.0)", "psutil"]
 tests = ["pytest", "pytest-cov", "pytest-env", "pytest-xdist", "pytype", "flake8 (>=3.8)", "flake8-bugbear", "isort (>=5.0)", "black", "scipy (>=1.4.1)"]
+
+[[package]]
+name = "str2bool"
+version = "1.1"
+description = "Convert string to boolean"
+category = "main"
+optional = false
+python-versions = "*"
 
 [[package]]
 name = "tensorboard"
@@ -725,7 +771,7 @@ watchdog = ["watchdog"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.10"
-content-hash = "77d76a09701424c88884a7a87b4bab840430b7bcfa8c31affa9d3da6081cda89"
+content-hash = "d9830ca1d196dea8840782ad79501abedb21b114b2e691a2501ca56899d4003b"
 
 [metadata.files]
 absl-py = []
@@ -747,6 +793,7 @@ google-auth-oauthlib = []
 grpcio = []
 gym = []
 idna = []
+imageio = []
 kiwisolver = []
 markdown = []
 markupsafe = []
@@ -765,6 +812,7 @@ protobuf = []
 psutil = []
 pyasn1 = []
 pyasn1-modules = []
+pyglet = []
 pyparsing = []
 python-dateutil = []
 pytz = []
@@ -778,6 +826,7 @@ setuptools-scm = []
 six = []
 smmap = []
 stable-baselines3 = []
+str2bool = []
 tensorboard = []
 tensorboard-data-server = []
 tensorboard-plugin-wit = []

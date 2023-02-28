@@ -3,6 +3,8 @@ __pycache__
 venv
 runs
 wandb
+logs
 
+replay.html
 submission.tar.gz
 

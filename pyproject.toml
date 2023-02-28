@@ -7,11 +7,14 @@ authors = ["Yuchuan Jin <yuchuanjin333@gmail.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.10"
-gym = "0.19"
 torch = "^1.13.1"
 tensorboard = "^2.12.0"
 stable-baselines3 = "^1.1.0"
 wandb = "^0.13.10"
+str2bool = "^1.1"
+gym = "0.21"
+pyglet = "^1.5.19"
+imageio = "^2.26.0"
 
 [tool.poetry.dev-dependencies]
 
