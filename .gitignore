@@ -2,9 +2,10 @@ __pycache__
 .vscode
 venv
 runs
-wandb
 logs
 
 replay.html
+best_model
+models/latest_model
 submission.tar.gz
 

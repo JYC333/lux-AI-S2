@@ -7,29 +7,16 @@ import copy
 import os.path as osp
 
 import gym
-import numpy as np
-import torch as th
-import torch.nn as nn
-from gym import spaces
 from gym.wrappers import TimeLimit
-from luxai_s2.state import ObservationStateDict, StatsStateDict
+from luxai_s2.state import StatsStateDict
 from luxai_s2.utils.heuristics.factory_placement import place_near_random_ice
 from luxai_s2.wrappers import SB3Wrapper
-from stable_baselines3.common.callbacks import (
-    BaseCallback,
-    CheckpointCallback,
-    EvalCallback,
-)
-from stable_baselines3.common.evaluation import evaluate_policy
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.utils import set_random_seed
-from stable_baselines3.common.vec_env import (
-    DummyVecEnv,
-    SubprocVecEnv,
-    VecVideoRecorder,
-)
-from stable_baselines3.ppo import PPO
+from stable_baselines3.common.vec_env import SubprocVecEnv
 
+from models.ppo import PPO
+from utils import evaluate_policy
 from wrappers import SimpleUnitDiscreteController, SimpleUnitObservationWrapper
 
 
@@ -130,13 +117,6 @@ def parse_args():
     parser.add_argument(
         "--model-path", type=str, help="Path to SB3 model weights to use for evaluation"
     )
-    parser.add_argument(
-        "-l",
-        "--log-path",
-        type=str,
-        default="logs",
-        help="Logging path",
-    )
     args = parser.parse_args()
     return args
 
@@ -172,74 +152,12 @@ def make_env(env_id: str, rank: int, seed: int = 0, max_episode_steps=100):
     return _init
 
 
-class TensorboardCallback(BaseCallback):
-    def __init__(self, tag: str, verbose=0):
-        super().__init__(verbose)
-        self.tag = tag
-
-    def _on_step(self) -> bool:
-        c = 0
-
-        for i, done in enumerate(self.locals["dones"]):
-            if done:
-                info = self.locals["infos"][i]
-                c += 1
-                for k in info["metrics"]:
-                    stat = info["metrics"][k]
-                    self.logger.record_mean(f"{self.tag}/{k}", stat)
-        return True
-
-
-def save_model_state_dict(save_path, model):
-    # save the policy state dict for kaggle competition submission
-    state_dict = model.policy.to("cpu").state_dict()
-    th.save(state_dict, save_path)
-
-
-def evaluate(args, env_id, model):
-    model = model.load(args.model_path)
-    video_length = 1000  # default horizon
-    eval_env = SubprocVecEnv(
-        [make_env(env_id, i, max_episode_steps=1000) for i in range(args.n_envs)]
-    )
-    eval_env = VecVideoRecorder(
-        eval_env,
-        osp.join(args.log_path, "eval_videos"),
-        record_video_trigger=lambda x: x == 0,
-        video_length=video_length,
-        name_prefix=f"evaluation_video",
-    )
-    eval_env.reset()
-    out = evaluate_policy(model, eval_env, render=False, deterministic=False)
-    print(out)
-
-
-def train(args, env_id, model: PPO):
-    eval_env = SubprocVecEnv(
-        [make_env(env_id, i, max_episode_steps=1000) for i in range(4)]
-    )
-    eval_callback = EvalCallback(
-        eval_env,
-        best_model_save_path=osp.join(args.log_path, "models"),
-        log_path=osp.join(args.log_path, "eval_logs"),
-        eval_freq=24_000,
-        deterministic=False,
-        render=False,
-        n_eval_episodes=5,
-    )
-
-    model.learn(
-        args.total_timesteps,
-        callback=[TensorboardCallback(tag="train_metrics"), eval_callback],
-    )
-    model.save(osp.join(args.log_path, "models/latest_model"))
-
-
 def main(args):
     print("Training with args", args)
     if args.seed is not None:
         set_random_seed(args.seed)
     env_id = "LuxAI_S2-v0"
+
     env = SubprocVecEnv(
         [
             make_env(env_id, i, max_episode_steps=args.max_episode_steps)
@@ -247,27 +165,32 @@ def main(args):
         ]
     )
     env.reset()
-    rollout_steps = 4000
-    policy_kwargs = dict(net_arch=(128, 128))
-    model = PPO(
-        "MlpPolicy",
-        env,
-        n_steps=rollout_steps // args.n_envs,
-        batch_size=800,
-        learning_rate=3e-4,
-        policy_kwargs=policy_kwargs,
-        verbose=1,
-        n_epochs=2,
-        target_kl=0.05,
-        gamma=0.99,
-        tensorboard_log=osp.join(args.log_path),
+
+    eval_env = SubprocVecEnv(
+        [make_env(env_id, i, max_episode_steps=1000) for i in range(5)]
     )
+    eval_env.reset()
+
+    model = PPO(
+        env,
+        eval_env,
+        num_envs=args.n_envs,
+        total_timesteps=args.total_timesteps,
+        use_best=True,
+    )
+
     if args.eval:
-        evaluate(args, env_id, model)
+        out = evaluate_policy(
+            PPO.load("best_model"), eval_env, render=False, deterministic=False
+        )
+        print(out)
     else:
-        train(args, env_id, model)
+        model.train()
+        model.save(osp.join("models/latest_model"))
+        # os.remove('best_model.zip')
+        # shutil.copy(osp.join(args.log_path,'models/best_model.zip'),'best_model.zip')
 
 
 if __name__ == "__main__":
-    # python ../examples/sb3.py -l logs/exp_1 -s 42 -n 1
+    # python ../examples/sb3.py -s 42 -n 1
     main(parse_args())

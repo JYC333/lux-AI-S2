@@ -57,13 +57,17 @@ class SimpleUnitDiscreteController(Controller):
         self.transfer_act_dims = 5
         self.pickup_act_dims = 1
         self.dig_act_dims = 1
+        self.self_destruct_dims = 1
+        self.recharge_dims = 1
         self.no_op_dims = 1
 
         self.move_dim_high = self.move_act_dims
         self.transfer_dim_high = self.move_dim_high + self.transfer_act_dims
         self.pickup_dim_high = self.transfer_dim_high + self.pickup_act_dims
         self.dig_dim_high = self.pickup_dim_high + self.dig_act_dims
-        self.no_op_dim_high = self.dig_dim_high + self.no_op_dims
+        self.self_destruct_dim_high = self.dig_dim_high + self.self_destruct_dims
+        self.recharge_dim_high = self.self_destruct_dim_high + self.recharge_dims
+        self.no_op_dim_high = self.recharge_dim_high + self.no_op_dims
 
         self.total_act_dims = self.no_op_dim_high
         action_space = spaces.Discrete(self.total_act_dims)
@@ -96,6 +100,18 @@ class SimpleUnitDiscreteController(Controller):
     def _get_dig_action(self, id):
         return np.array([3, 0, 0, 0, 0, 1])
 
+    def _is_self_destruct_action(self, id):
+        return id < self.self_destruct_dim_high
+
+    def _get_self_destruct_action(self, id):
+        return np.array([4, 0, 0, 0, 0, 1])
+
+    def _is_recharge_action(self, id):
+        return id < self.self_destruct_dim_high
+
+    def _get_recharge_action(self, id):
+        return np.array([5, 0, 0, self.env_cfg.max_transfer_amount, 0, 1])
+
     def action_to_lux_action(
         self, agent: str, obs: Dict[str, Any], action: npt.NDArray
     ):
@@ -115,6 +131,10 @@ class SimpleUnitDiscreteController(Controller):
                 action_queue = [self._get_pickup_action(choice)]
             elif self._is_dig_action(choice):
                 action_queue = [self._get_dig_action(choice)]
+            elif self._is_self_destruct_action(choice):
+                action_queue = [self._get_self_destruct_action(choice)]
+            elif self._is_recharge_action(choice):
+                action_queue = [self._get_recharge_action(choice)]
             else:
                 # action is a no_op, so we don't update the action queue
                 no_op = True
