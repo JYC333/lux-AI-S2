@@ -12,12 +12,17 @@ import numpy as np
 import torch as th
 from models.ppo import PPO
 from lux.config import EnvConfig
-from wrappers import SimpleUnitDiscreteController, SimpleUnitObservationWrapper
+from wrappers import (
+    SimpleUnitDiscreteController,
+    SimpleUnitObservationWrapper,
+    ConvObservationWrapper,
+)
 
 # change this to use weights stored elsewhere
 # make sure the model weights are submitted with the other code files
 # any files in the logs folder are not necessary. Make sure to exclude the .zip extension here
 MODEL_WEIGHTS_RELATIVE_PATH = "./best_model"
+
 
 class Agent:
     def __init__(self, player: str, env_cfg: EnvConfig) -> None:
@@ -27,7 +32,9 @@ class Agent:
         self.env_cfg: EnvConfig = env_cfg
 
         directory = osp.dirname(__file__)
-        self.policy = PPO.load(osp.join(directory, MODEL_WEIGHTS_RELATIVE_PATH))
+        self.policy = PPO.load(
+            osp.join(directory, MODEL_WEIGHTS_RELATIVE_PATH), env_cfg=self.env_cfg
+        ).to("cuda")
 
         self.controller = SimpleUnitDiscreteController(self.env_cfg)
 
@@ -75,35 +82,52 @@ class Agent:
     def act(self, step: int, obs, remainingOverageTime: int = 60):
         # first convert observations using the same observation wrapper you used for training
         # note that SimpleUnitObservationWrapper takes input as the full observation for both players and returns an obs for players
+
+        units = obs["units"][self.player]
+        units_map = np.zeros((48, 48))
+        for unit in units:
+            units_map[units[unit]["pos"][0]][units[unit]["pos"][1]] = 1
+
+        factories = obs["factories"][self.player]
+        factories_map = np.zeros((48, 48))
+        for factory in factories:
+            factories_map[factories[factory]["pos"][0]][
+                factories[factory]["pos"][1]
+            ] = 1
+
         raw_obs = dict(player_0=obs, player_1=obs)
-        obs = SimpleUnitObservationWrapper.convert_obs(raw_obs, env_cfg=self.env_cfg)
+        obs = ConvObservationWrapper.convert_obs(
+            raw_obs, env_cfg=self.env_cfg, step=step
+        )
         obs = obs[self.player]
 
         obs = th.from_numpy(obs).float()
+        obs = obs.unsqueeze(0)
         with th.no_grad():
-
             # to improve performance, we have a rule based action mask generator for the controller used
             # which will force the agent to generate actions that are valid only.
             action_mask = (
-                th.from_numpy(self.controller.action_masks(self.player, raw_obs))
+                th.from_numpy(self.controller.action_masks(self.player, raw_obs, step))
                 .unsqueeze(0)
                 .bool()
             )
-            
+
             # use action mask during the prediction
-            actions=self.policy.predict_action(obs,action_mask)
+            actions = self.policy.predict_action(
+                obs, units_map, factories_map, action_mask
+            )
 
         # use our controller which we trained with in train.py to generate a Lux S2 compatible action
-        lux_action = self.controller.action_to_lux_action(
-            self.player, raw_obs, actions
-        )
+        lux_action = self.controller.action_to_lux_action(self.player, raw_obs, actions)
 
         # commented code below adds watering lichen which can easily improve your agent
-        shared_obs = raw_obs[self.player]
-        factories = shared_obs["factories"][self.player]
-        for unit_id in factories.keys():
-            factory = factories[unit_id]
-            if 1000 - step < 50 and factory["cargo"]["water"] > 100:
-                lux_action[unit_id] = 2 # water and grow lichen at the very end of the game
+        # shared_obs = raw_obs[self.player]
+        # factories = shared_obs["factories"][self.player]
+        # for unit_id in factories.keys():
+        #     factory = factories[unit_id]
+        #     if 1000 - step < 50 and factory["cargo"]["water"] > 100:
+        #         lux_action[
+        #             unit_id
+        #         ] = 2  # water and grow lichen at the very end of the game
 
         return lux_action

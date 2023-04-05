@@ -20,7 +20,11 @@ from stable_baselines3.common.vec_env import (
     is_vecenv_wrapped,
 )
 
-from wrappers import SimpleUnitDiscreteController, SimpleUnitObservationWrapper
+from wrappers import (
+    SimpleUnitDiscreteController,
+    SimpleUnitObservationWrapper,
+    ConvObservationWrapper,
+)
 
 
 class CustomEnvWrapper(gym.Wrapper):
@@ -35,7 +39,26 @@ class CustomEnvWrapper(gym.Wrapper):
         agent = "player_0"
         opp_agent = "player_1"
 
+        own_factories = self.env.state.factories[agent]
+        own_strain_id = self.env.state.teams[agent].factory_strains
+
+        dis_to_factories = np.zeros(
+            (self.env.state.env_cfg.map_size, self.env.state.env_cfg.map_size)
+        )
+        for i in range(len(dis_to_factories)):
+            for j in range(len(dis_to_factories[i])):
+                dis = float("inf")
+                for k in own_factories.keys():
+                    dis_k = np.sqrt(
+                        (i - own_factories[k].pos.x) ** 2
+                        + (j - own_factories[k].pos.y) ** 2
+                    )
+                    if dis_k < dis:
+                        dis = dis_k
+                dis_to_factories[i][j] = dis if dis != 0 else 1
+
         opp_factories = self.env.state.factories[opp_agent]
+        opp_strain_id = self.env.state.teams[opp_agent].factory_strains
         for k in opp_factories.keys():
             factory = opp_factories[k]
             # set enemy factories to have 1000 water to keep them alive the whole around and treat the game as single-agent
@@ -56,7 +79,50 @@ class CustomEnvWrapper(gym.Wrapper):
         metrics["ice_dug"] = (
             stats["generation"]["ice"]["HEAVY"] + stats["generation"]["ice"]["LIGHT"]
         )
+        metrics["ore_dug"] = (
+            stats["generation"]["ore"]["HEAVY"] + stats["generation"]["ore"]["LIGHT"]
+        )
         metrics["water_produced"] = stats["generation"]["water"]
+
+        metrics["rubble"] = self.env.state.board.rubble
+
+        metrics["lichen"] = self.env.state.board.lichen
+
+        metrics["own_lichen_strains"] = np.zeros(
+            (self.env.state.env_cfg.map_size, self.env.state.env_cfg.map_size)
+        )
+        metrics["opp_lichen_strains"] = np.zeros(
+            (self.env.state.env_cfg.map_size, self.env.state.env_cfg.map_size)
+        )
+        for i in range(len(self.env.state.board.lichen_strains)):
+            for j in range(len(self.env.state.board.lichen_strains[i])):
+                if self.env.state.board.lichen_strains[i][j] in own_strain_id:
+                    # print(
+                    #     i,
+                    #     j,
+                    #     metrics["lichen"][i][j],
+                    #     self.env.state.board.lichen_strains[i][j],
+                    #     own_strain_id,
+                    #     opp_strain_id,
+                    # )
+                    metrics["own_lichen_strains"][i][j] = 1
+                if self.env.state.board.lichen_strains[i][j] in opp_strain_id:
+                    # print(
+                    #     i,
+                    #     j,
+                    #     self.env.state.board.lichen_strains[i][j],
+                    #     metrics["lichen"][i][j],
+                    #     own_strain_id,
+                    #     opp_strain_id,
+                    # )
+                    metrics["opp_lichen_strains"][i][j] = 1
+        # print(np.sum(metrics["own_lichen_strains"]), np.sum(metrics["lichen"]))
+
+        metrics["power_consumption"] = (
+            stats["consumption"]["power"]["LIGHT"]
+            + stats["consumption"]["power"]["HEAVY"]
+            + stats["consumption"]["power"]["FACTORY"]
+        )
 
         # we save these two to see often the agent updates robot action queues and how often enough
         # power to do so and succeed (less frequent updates = more power is saved)
@@ -70,14 +136,60 @@ class CustomEnvWrapper(gym.Wrapper):
         if self.prev_step_metrics is not None:
             # we check how much ice and water is produced and reward the agent for generating both
             ice_dug_this_step = metrics["ice_dug"] - self.prev_step_metrics["ice_dug"]
+            ore_dug_this_step = metrics["ore_dug"] - self.prev_step_metrics["ore_dug"]
+            rubble_dug_this_step = metrics["rubble"] - self.prev_step_metrics["rubble"]
+            own_lichen_grow_this_step = (
+                metrics["lichen"] * metrics["own_lichen_strains"]
+                - self.prev_step_metrics["lichen"]
+                * self.prev_step_metrics["own_lichen_strains"]
+            )
+            opp_lichen_grow_this_step = (
+                metrics["lichen"] * metrics["opp_lichen_strains"]
+                - self.prev_step_metrics["lichen"]
+                * self.prev_step_metrics["opp_lichen_strains"]
+            )
             water_produced_this_step = (
                 metrics["water_produced"] - self.prev_step_metrics["water_produced"]
             )
+            power_consumption_this_step = (
+                metrics["power_consumption"]
+                - self.prev_step_metrics["power_consumption"]
+            )
+
             # we reward water production more as it is the most important resource for survival
-            reward = ice_dug_this_step / 100 + water_produced_this_step
+            reward = (
+                np.sum(rubble_dug_this_step / dis_to_factories) / 100
+                + ore_dug_this_step / 200
+                + ice_dug_this_step / 50
+                + water_produced_this_step
+                + np.sum(own_lichen_grow_this_step)
+                - np.sum(opp_lichen_grow_this_step) / 1000
+                # - power_consumption_this_step / 100000
+            )
+            # print(
+            #     np.sum(rubble_dug_this_step * dis_to_factories),
+            #     ore_dug_this_step,
+            #     ice_dug_this_step,
+            #     water_produced_this_step,
+            #     np.sum(own_lichen_grow_this_step),
+            # )
 
         self.prev_step_metrics = copy.deepcopy(metrics)
         return obs, reward, done, info
+
+    def get_units_map(self):
+        units = self.env.state.units["player_0"]
+        units_map = np.zeros((48, 48))
+        for unit in units:
+            units_map[units[unit].pos.x][units[unit].pos.y] = 1
+        return units_map
+
+    def get_factories_map(self):
+        factories = self.env.state.factories["player_0"]
+        factories_map = np.zeros((48, 48))
+        for factory in factories:
+            factories_map[factories[factory].pos.x][factories[factory].pos.y] = 1
+        return factories_map
 
     def reset(self, **kwargs):
         obs = self.env.reset(**kwargs)["player_0"]
@@ -101,9 +213,10 @@ def make_env(env_id: str, rank: int, seed: int = 0, max_episode_steps=100):
             factory_placement_policy=place_near_random_ice,
             controller=SimpleUnitDiscreteController(env.env_cfg),
         )
-        env = SimpleUnitObservationWrapper(
-            env
-        )  # changes observation to include a few simple features
+        # env = SimpleUnitObservationWrapper(
+        #     env
+        # )  # changes observation to include a few simple features
+        env = ConvObservationWrapper(env)
         env = CustomEnvWrapper(env)  # convert to single agent, add our reward
         env = TimeLimit(
             env, max_episode_steps=max_episode_steps
@@ -194,8 +307,13 @@ def evaluate_policy(
     observations = env.reset()
     states = None
     while (episode_counts < episode_count_targets).any():
-        actions, states = model.predict(observations, states)
-        observations, rewards, dones, infos = env.step(actions)
+        actions, states = model.predict(
+            observations,
+            np.array(env.env_method("get_units_map")),
+            np.array(env.env_method("get_factories_map")),
+            states,
+        )
+        observations, rewards, dones, infos = env.step(actions.detach().cpu())
         current_rewards += rewards
         current_lengths += 1
         for i in range(n_envs):

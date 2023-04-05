@@ -3,9 +3,13 @@ __pycache__
 venv
 runs
 logs
+submission_models
 
 replay.html
 best_model
+latest_model
+checkpoint
+models/checkpoint
 models/latest_model
 submission.tar.gz
-
+*.ipynb
