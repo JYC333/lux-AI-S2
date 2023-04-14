@@ -426,7 +426,7 @@ class PPO:
             find_unused_parameters=True,
         )
 
-        out = evaluate_policy(self.agent, self.eval_env, deterministic=False)
+        out = evaluate_policy(self.agent.module, self.eval_env, deterministic=False)
         self.best_model = out[0] - out[1]
         print(f"Model Score before training:{out[0] - out[1]}, ({out})")
 
@@ -484,7 +484,7 @@ class PPO:
                         np.array(self.env.env_method("get_factories_map"))
                     ).to(self.device)
 
-                    action, logprob, _, value = self.agent.get_action_and_value(
+                    action, logprob, _, value = self.agent.module.get_action_and_value(
                         next_obs, units_map[step], factories_map[step]
                     )
                     values[step] = value.flatten()
@@ -513,7 +513,7 @@ class PPO:
 
             # bootstrap value if not done
             with torch.no_grad():
-                next_value = self.agent.get_value(next_obs).reshape(1, -1)
+                next_value = self.agent.module.get_value(next_obs).reshape(1, -1)
                 if self.gae:
                     advantages = torch.zeros_like(rewards).to(self.device)
                     lastgaelam = 0
@@ -576,7 +576,7 @@ class PPO:
                     end = start + self.minibatch_size
                     mb_inds = b_inds[start:end]
 
-                    _, newlogprob, entropy, newvalue = self.agent.get_action_and_value(
+                    _, newlogprob, entropy, newvalue = self.agent.module.get_action_and_value(
                         b_obs[mb_inds],
                         b_units_map[mb_inds],
                         b_factories_map[mb_inds],
@@ -644,7 +644,7 @@ class PPO:
             )
 
             if update % eval_update == 0 and self.eval_env:
-                out = evaluate_policy(self.agent, self.eval_env, deterministic=False)
+                out = evaluate_policy(self.agent.module, self.eval_env, deterministic=False)
                 checkpoint = {
                     "net": self.agent.state_dict(),
                     "optimizer": self.optimizer.state_dict(),
