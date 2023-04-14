@@ -391,6 +391,7 @@ class PPO:
         self.device = torch.device(
             "cuda" if torch.cuda.is_available() and cuda else "cpu"
         )
+        self.multi_GPU = False
 
         # env setup
         self.env = env
@@ -419,7 +420,8 @@ class PPO:
         if torch.cuda.device_count() > 1:
             print("Using", torch.cuda.device_count(), "GPUs")
             self.agent = nn.DataParallel(self.agent)
-        
+            self.multi_GPU = True
+
         out = evaluate_policy(self.agent, self.eval_env, deterministic=False)
         self.best_model = out[0] - out[1]
         print(f"Model Score before training:{out[0] - out[1]}, ({out})")
@@ -477,9 +479,19 @@ class PPO:
                         np.array(self.env.env_method("get_factories_map"))
                     ).to(self.device)
 
-                    action, logprob, _, value = self.agent.get_action_and_value(
-                        next_obs, units_map[step], factories_map[step]
-                    )
+                    if self.multi_GPU:
+                        (
+                            action,
+                            logprob,
+                            _,
+                            value,
+                        ) = self.agent.module.get_action_and_value(
+                            next_obs, units_map[step], factories_map[step]
+                        )
+                    else:
+                        action, logprob, _, value = self.agent.get_action_and_value(
+                            next_obs, units_map[step], factories_map[step]
+                        )
                     values[step] = value.flatten()
                 actions[step] = action
                 logprobs[step] = logprob
@@ -506,7 +518,10 @@ class PPO:
 
             # bootstrap value if not done
             with torch.no_grad():
-                next_value = self.agent.get_value(next_obs).reshape(1, -1)
+                if self.multi_GPU:
+                    next_value = self.agent.module.get_value(next_obs).reshape(1, -1)
+                else:
+                    next_value = self.agent.get_value(next_obs).reshape(1, -1)
                 if self.gae:
                     advantages = torch.zeros_like(rewards).to(self.device)
                     lastgaelam = 0
@@ -569,12 +584,30 @@ class PPO:
                     end = start + self.minibatch_size
                     mb_inds = b_inds[start:end]
 
-                    _, newlogprob, entropy, newvalue = self.agent.get_action_and_value(
-                        b_obs[mb_inds],
-                        b_units_map[mb_inds],
-                        b_factories_map[mb_inds],
-                        b_actions.long()[mb_inds],
-                    )
+                    if self.multi_GPU:
+                        (
+                            _,
+                            newlogprob,
+                            entropy,
+                            newvalue,
+                        ) = self.agent.module.get_action_and_value(
+                            b_obs[mb_inds],
+                            b_units_map[mb_inds],
+                            b_factories_map[mb_inds],
+                            b_actions.long()[mb_inds],
+                        )
+                    else:
+                        (
+                            _,
+                            newlogprob,
+                            entropy,
+                            newvalue,
+                        ) = self.agent.get_action_and_value(
+                            b_obs[mb_inds],
+                            b_units_map[mb_inds],
+                            b_factories_map[mb_inds],
+                            b_actions.long()[mb_inds],
+                        )
                     logratio = newlogprob - b_logprobs[mb_inds]
                     ratio = logratio.exp()
 

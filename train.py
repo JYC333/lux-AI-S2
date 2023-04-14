@@ -38,6 +38,12 @@ def parse_args():
         help="Total timesteps for training",
     )
     parser.add_argument(
+        "--eval-freq",
+        type=int,
+        default=10_000,
+        help="Evaluation frequency for training",
+    )
+    parser.add_argument(
         "--eval",
         action="store_true",
         help="If set, will only evaluate a given policy. Otherwise enters training mode",
@@ -80,6 +86,7 @@ def main(args):
         eval_env,
         num_envs=args.n_envs,
         total_timesteps=args.total_timesteps,
+        eval_freq=args.eval_freq,
         resume=args.resume,
         model_path=args.model_path,
     )
