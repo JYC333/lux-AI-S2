@@ -422,7 +422,10 @@ class PPO:
             self.agent = nn.DataParallel(self.agent)
             self.multi_GPU = True
 
-        out = evaluate_policy(self.agent, self.eval_env, deterministic=False)
+        if self.multi_GPU:
+            out = evaluate_policy(self.agent.module, self.eval_env, deterministic=False)
+        else:
+            out = evaluate_policy(self.agent, self.eval_env, deterministic=False)
         self.best_model = out[0] - out[1]
         print(f"Model Score before training:{out[0] - out[1]}, ({out})")
 
@@ -670,9 +673,14 @@ class PPO:
             )
 
             if update % eval_update == 0 and self.eval_env:
-                out = evaluate_policy(
-                    self.agent, self.eval_env, render=False, deterministic=False
-                )
+                if self.multi_GPU:
+                    out = evaluate_policy(
+                        self.agent.module, self.eval_env, deterministic=False
+                    )
+                else:
+                    out = evaluate_policy(
+                        self.agent, self.eval_env, deterministic=False
+                    )
                 checkpoint = {
                     "net": self.agent.state_dict(),
                     "optimizer": self.optimizer.state_dict(),
