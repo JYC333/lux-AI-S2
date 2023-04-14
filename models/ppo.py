@@ -358,6 +358,7 @@ class PPO:
         torch_deterministic=True,
         resume=False,
         model_path=None,
+        local_rank=None,
     ) -> None:
         self.learning_rate = learning_rate
         self.total_timesteps = total_timesteps
@@ -382,16 +383,17 @@ class PPO:
         self.minibatch_size = int(self.batch_size // self.num_minibatches)
 
         self.seed = seed
+        self.loacl_rank = local_rank
 
         random.seed(self.seed)
         np.random.seed(self.seed)
         torch.manual_seed(self.seed)
         torch.backends.cudnn.deterministic = torch_deterministic
 
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() and cuda else "cpu"
-        )
-        self.multi_GPU = False
+        torch.cuda.set_device(local_rank)
+        self.device = torch.device("cuda", local_rank)
+
+        torch.distributed.init_process_group(backend="nccl")
 
         # env setup
         self.env = env
@@ -417,21 +419,21 @@ class PPO:
                 self.agent.parameters(), lr=self.learning_rate, eps=1e-5
             )
 
-        if torch.cuda.device_count() > 1:
-            print("Using", torch.cuda.device_count(), "GPUs")
-            self.agent = nn.DataParallel(self.agent)
-            self.multi_GPU = True
+        self.agent = torch.nn.parallel.DistributedDataParallel(
+            self.agent,
+            device_ids=[local_rank],
+            output_device=local_rank,
+            find_unused_parameters=True,
+        )
 
-        if self.multi_GPU:
-            out = evaluate_policy(self.agent.module, self.eval_env, deterministic=False)
-        else:
-            out = evaluate_policy(self.agent, self.eval_env, deterministic=False)
+        out = evaluate_policy(self.agent, self.eval_env, deterministic=False)
         self.best_model = out[0] - out[1]
         print(f"Model Score before training:{out[0] - out[1]}, ({out})")
 
     def train(self):
-        run_name = f"LUX__{self.seed}__{int(time.time())}"
-        writer = SummaryWriter(f"runs/{run_name}")
+        if self.loacl_rank == 0:
+            run_name = f"LUX__{self.seed}__{int(time.time())}"
+            writer = SummaryWriter(f"runs/{run_name}")
 
         # ALGO Logic: Storage setup
         obs = torch.zeros(
@@ -482,19 +484,9 @@ class PPO:
                         np.array(self.env.env_method("get_factories_map"))
                     ).to(self.device)
 
-                    if self.multi_GPU:
-                        (
-                            action,
-                            logprob,
-                            _,
-                            value,
-                        ) = self.agent.module.get_action_and_value(
-                            next_obs, units_map[step], factories_map[step]
-                        )
-                    else:
-                        action, logprob, _, value = self.agent.get_action_and_value(
-                            next_obs, units_map[step], factories_map[step]
-                        )
+                    action, logprob, _, value = self.agent.get_action_and_value(
+                        next_obs, units_map[step], factories_map[step]
+                    )
                     values[step] = value.flatten()
                 actions[step] = action
                 logprobs[step] = logprob
@@ -521,10 +513,7 @@ class PPO:
 
             # bootstrap value if not done
             with torch.no_grad():
-                if self.multi_GPU:
-                    next_value = self.agent.module.get_value(next_obs).reshape(1, -1)
-                else:
-                    next_value = self.agent.get_value(next_obs).reshape(1, -1)
+                next_value = self.agent.get_value(next_obs).reshape(1, -1)
                 if self.gae:
                     advantages = torch.zeros_like(rewards).to(self.device)
                     lastgaelam = 0
@@ -587,30 +576,12 @@ class PPO:
                     end = start + self.minibatch_size
                     mb_inds = b_inds[start:end]
 
-                    if self.multi_GPU:
-                        (
-                            _,
-                            newlogprob,
-                            entropy,
-                            newvalue,
-                        ) = self.agent.module.get_action_and_value(
-                            b_obs[mb_inds],
-                            b_units_map[mb_inds],
-                            b_factories_map[mb_inds],
-                            b_actions.long()[mb_inds],
-                        )
-                    else:
-                        (
-                            _,
-                            newlogprob,
-                            entropy,
-                            newvalue,
-                        ) = self.agent.get_action_and_value(
-                            b_obs[mb_inds],
-                            b_units_map[mb_inds],
-                            b_factories_map[mb_inds],
-                            b_actions.long()[mb_inds],
-                        )
+                    _, newlogprob, entropy, newvalue = self.agent.get_action_and_value(
+                        b_obs[mb_inds],
+                        b_units_map[mb_inds],
+                        b_factories_map[mb_inds],
+                        b_actions.long()[mb_inds],
+                    )
                     logratio = newlogprob - b_logprobs[mb_inds]
                     ratio = logratio.exp()
 
@@ -673,14 +644,7 @@ class PPO:
             )
 
             if update % eval_update == 0 and self.eval_env:
-                if self.multi_GPU:
-                    out = evaluate_policy(
-                        self.agent.module, self.eval_env, deterministic=False
-                    )
-                else:
-                    out = evaluate_policy(
-                        self.agent, self.eval_env, deterministic=False
-                    )
+                out = evaluate_policy(self.agent, self.eval_env, deterministic=False)
                 checkpoint = {
                     "net": self.agent.state_dict(),
                     "optimizer": self.optimizer.state_dict(),
@@ -693,25 +657,33 @@ class PPO:
                     print(f"Saving best model: {self.best_model}")
                     self.save("best_model")
 
-            # TRY NOT TO MODIFY: record rewards for plotting purposes
-            writer.add_scalar(
-                "charts/learning_rate",
-                self.optimizer.param_groups[0]["lr"],
-                global_step,
-            )
-            writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
-            writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
-            writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
-            writer.add_scalar("losses/old_approx_kl", old_approx_kl.item(), global_step)
-            writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
-            writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
-            writer.add_scalar("losses/explained_variance", explained_var, global_step)
-            writer.add_scalar(
-                "charts/SPS", int(global_step / (time.time() - start_time)), global_step
-            )
+            if self.loacl_rank == 0:
+                # TRY NOT TO MODIFY: record rewards for plotting purposes
+                writer.add_scalar(
+                    "charts/learning_rate",
+                    self.optimizer.param_groups[0]["lr"],
+                    global_step,
+                )
+                writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
+                writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
+                writer.add_scalar("losses/entropy", entropy_loss.item(), global_step)
+                writer.add_scalar(
+                    "losses/old_approx_kl", old_approx_kl.item(), global_step
+                )
+                writer.add_scalar("losses/approx_kl", approx_kl.item(), global_step)
+                writer.add_scalar("losses/clipfrac", np.mean(clipfracs), global_step)
+                writer.add_scalar(
+                    "losses/explained_variance", explained_var, global_step
+                )
+                writer.add_scalar(
+                    "charts/SPS",
+                    int(global_step / (time.time() - start_time)),
+                    global_step,
+                )
 
         self.env.close()
-        writer.close()
+        if self.loacl_rank == 0:
+            writer.close()
 
     def save(self, path, checkpoint=None):
         if checkpoint is None:

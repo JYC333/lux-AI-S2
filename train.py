@@ -25,6 +25,7 @@ def parse_args():
         default=8,
         help="Number of parallel envs to run. Note that the rollout size is configured separately and invariant to this value",
     )
+    parser.add_argument("--local_rank", type=int, default=-1)
     parser.add_argument(
         "--max-episode-steps",
         type=int,
@@ -71,7 +72,7 @@ def main(args):
     env = SubprocVecEnv(
         [
             make_env(env_id, i, max_episode_steps=args.max_episode_steps)
-            for i in range(args.n_envs)
+            for i in range(int(args.n_envs / 2))
         ]
     )
     env.reset()
@@ -84,11 +85,12 @@ def main(args):
     model = PPO(
         env,
         eval_env,
-        num_envs=args.n_envs,
-        total_timesteps=args.total_timesteps,
+        num_envs=int(args.n_envs / 2),
+        total_timesteps=int(args.total_timesteps / 2),
         eval_freq=args.eval_freq,
         resume=args.resume,
         model_path=args.model_path,
+        local_rank=args.local_rank,
     )
 
     if args.eval:
