@@ -661,13 +661,13 @@ class PPO:
                     "net": self.agent.state_dict(),
                     "optimizer": self.optimizer.state_dict(),
                 }
-                self.save("checkpoint", checkpoint=checkpoint)
-                self.save("latest_model")
+                self.save(f"checkpoint-{self.loacl_rank}", checkpoint=checkpoint)
+                self.save(f"latest_model-{self.loacl_rank}")
                 print(f"{self.loacl_rank}-Evalutate Score:{out[0] - out[1]}, ({out})")
                 if out[0] - out[1] > self.best_model:
                     self.best_model = out[0] - out[1]
                     print(f"Saving best model: {self.best_model}")
-                    self.save("best_model")
+                    self.save(f"best_model-{self.loacl_rank}")
 
             if self.loacl_rank == 0:
                 # TRY NOT TO MODIFY: record rewards for plotting purposes
