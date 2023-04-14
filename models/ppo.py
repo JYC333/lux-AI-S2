@@ -428,7 +428,7 @@ class PPO:
 
         out = evaluate_policy(self.agent.module, self.eval_env, deterministic=False)
         self.best_model = out[0] - out[1]
-        print(f"Model Score before training:{out[0] - out[1]}, ({out})")
+        print(f"{local_rank}-Model Score before training:{out[0] - out[1]}, ({out})")
 
     def train(self):
         if self.loacl_rank == 0:
@@ -501,14 +501,19 @@ class PPO:
                 for item in info:
                     if "episode" in item.keys():
                         print(
-                            f"global_step={global_step}, episodic_return={item['episode']['r']}"
+                            f"{self.loacl_rank}-global_step={global_step}, episodic_return={item['episode']['r']}"
                         )
-                        writer.add_scalar(
-                            "charts/episodic_return", item["episode"]["r"], global_step
-                        )
-                        writer.add_scalar(
-                            "charts/episodic_length", item["episode"]["l"], global_step
-                        )
+                        if self.loacl_rank == 0:
+                            writer.add_scalar(
+                                "charts/episodic_return",
+                                item["episode"]["r"],
+                                global_step,
+                            )
+                            writer.add_scalar(
+                                "charts/episodic_length",
+                                item["episode"]["l"],
+                                global_step,
+                            )
                         break
 
             # bootstrap value if not done
@@ -576,7 +581,12 @@ class PPO:
                     end = start + self.minibatch_size
                     mb_inds = b_inds[start:end]
 
-                    _, newlogprob, entropy, newvalue = self.agent.module.get_action_and_value(
+                    (
+                        _,
+                        newlogprob,
+                        entropy,
+                        newvalue,
+                    ) = self.agent.module.get_action_and_value(
                         b_obs[mb_inds],
                         b_units_map[mb_inds],
                         b_factories_map[mb_inds],
@@ -644,14 +654,16 @@ class PPO:
             )
 
             if update % eval_update == 0 and self.eval_env:
-                out = evaluate_policy(self.agent.module, self.eval_env, deterministic=False)
+                out = evaluate_policy(
+                    self.agent.module, self.eval_env, deterministic=False
+                )
                 checkpoint = {
                     "net": self.agent.state_dict(),
                     "optimizer": self.optimizer.state_dict(),
                 }
                 self.save("checkpoint", checkpoint=checkpoint)
                 self.save("latest_model")
-                print(f"Evalutate Score:{out[0] - out[1]}, ({out})")
+                print(f"{self.loacl_rank}-Evalutate Score:{out[0] - out[1]}, ({out})")
                 if out[0] - out[1] > self.best_model:
                     self.best_model = out[0] - out[1]
                     print(f"Saving best model: {self.best_model}")
