@@ -15,7 +15,7 @@ replay(){
 }
 
 train(){
-    python train.py --total-timesteps 2000000 --n-envs 1 --seed 42
+    python train.py --total-timesteps 2000000 --eval-freq 10000 --n-envs 1 --seed 42
 }
 
 "$@"
