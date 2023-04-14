@@ -415,6 +415,11 @@ class PPO:
             self.optimizer = optim.Adam(
                 self.agent.parameters(), lr=self.learning_rate, eps=1e-5
             )
+
+        if torch.cuda.device_count() > 1:
+            print("Using", torch.cuda.device_count(), "GPUs")
+            self.agent = nn.DataParallel(self.agent)
+        
         out = evaluate_policy(self.agent, self.eval_env, deterministic=False)
         self.best_model = out[0] - out[1]
         print(f"Model Score before training:{out[0] - out[1]}, ({out})")
