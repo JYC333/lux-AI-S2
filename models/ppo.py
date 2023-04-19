@@ -402,7 +402,9 @@ class PPO:
 
         if resume:
             print("Resume training")
-            self.agent, checkpoint = PPO.load(model_path, resume=True, env=env)
+            self.agent, checkpoint = PPO.load(
+                model_path, resume=True, local_rank=local_rank, env=env
+            )
             self.agent = self.agent.to(self.device)
             self.optimizer = optim.Adam(
                 self.agent.parameters(), lr=self.learning_rate, eps=1e-5
@@ -704,11 +706,11 @@ class PPO:
             torch.save(checkpoint, path)
 
     @staticmethod
-    def load(path, resume=False, **kwargs):
+    def load(path, resume=False, local_rank="0", **kwargs):
         model = ConvNetwork(**kwargs)
 
         if resume:
-            checkpoint = torch.load(path)
+            checkpoint = torch.load(path + "-" + str(local_rank))
             model.load_state_dict(checkpoint["net"])
             model.eval()
             return model, checkpoint
