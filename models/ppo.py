@@ -699,7 +699,7 @@ class PPO:
 
     def save(self, path, checkpoint=None):
         if checkpoint is None:
-            torch.save(self.agent.state_dict(), path)
+            torch.save(self.agent.module.state_dict(), path)
         else:
             torch.save(checkpoint, path)
 
